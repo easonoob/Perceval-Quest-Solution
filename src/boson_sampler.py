@@ -1,0 +1,147 @@
+import perceval as pcvl
+import torch
+from math import comb
+from typing import Iterable
+from functools import lru_cache
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class BosonSampler:
+    
+    def __init__(self, m: int, n: int, postselect: int = None, session: pcvl.ISession = None):
+        """
+        A class able to embed a tensor using a photonic circuit with thresholded outputs.
+        
+        :param m: The number of modes of the circuit.
+        :param n: The number of photons to input in the circuit.
+        :param postselect: The minimum number of detected photons to count an output state as valid. Defaults to n.
+        :param session: An optional scaleway session. If provided, simulations will be launched remotely, else they will run locally.
+        """
+        self.m = m
+        self.n = n
+        assert n <= m, "Got more modes than photons, can only input 0 or 1 photon per mode"
+        self.postselect = postselect or n
+        assert self.postselect <= n, "Cannot postselect with more photons than the input number of photons"
+        self.session = session
+
+    @property
+    def _nb_parameters_needed(self) -> int:
+        """Returns the number of phase shifters in the circuit. Only used internally"""
+        return self.m * (self.m - 1)
+    
+    @property
+    def nb_parameters(self) -> int:
+        """Returns the maximum number of values in the input tensor.
+           This corresponds to the number of phase shifters that can affect the output probabilities in the circuit"""
+        return self._nb_parameters_needed - (self.m // 2)  # Last layer of PS doesn't change anything
+    
+    def create_circuit(self, parameters: Iterable[float] = None) -> pcvl.Circuit:
+        """Creates a generic interferometer using a list of phases of size self._nb_parameters_needed.
+        If no list is provided, the circuit is built with perceval parameters."""
+        if parameters is None:
+            parameters = [p for i in range(self.m * (self.m - 1) // 2)
+                          for p in [pcvl.P(f"phi_{2 * i}"), pcvl.P(f"phi_{2 * i + 1}")]]
+        return pcvl.GenericInterferometer(
+            self.m,
+            lambda i: (pcvl.BS()
+                       .add(0, pcvl.PS(parameters[2 * i]))
+                       .add(0, pcvl.BS())
+                       .add(0, pcvl.PS(parameters[2 * i + 1])))
+        )
+        
+    def embed(self, t: torch.tensor, n_sample: int) -> torch.tensor:
+        """
+        Embeds the tensor t using its values as phases in a circuit, and returns the marginal output probabilities
+        for each qumode (i.e., the probability of detecting a photon in each mode).
+        
+        :param t: The tensor to be embedded, with values between 0 and 1.
+        :param n_sample: The number of samples used to estimate the output probability distribution.
+        :return: A 1D tensor of size self.m representing the probability of measuring a photon in each mode.
+        """
+        t = t.reshape(-1)  # Flatten the tensor to a list of values
+        if len(t) > self.nb_parameters:
+            raise ValueError(f"Got too many parameters (got {len(t)}, maximum {self.nb_parameters})")
+        
+        # Complete the tensor if necessary
+        z = torch.zeros(self._nb_parameters_needed - len(t))
+        if len(z):
+            t = torch.cat((t, z), 0)
+            
+        t = t * 2 * torch.pi  # Scale to full phase range
+        mode_probs = self.run(t, n_sample)
+        return mode_probs
+        
+    def run(self, parameters: Iterable[float], samples: int) -> torch.tensor:
+        """
+        Samples the circuit using the provided phases and returns a tensor of size self.m, where each entry
+        is the probability of measuring a photon in the corresponding mode.
+        
+        This version utilizes CUDA (if available) and vectorized matrix multiplication for efficiency.
+        
+        :param parameters: Iterable of phase values for the circuit.
+        :param samples: Number of samples (shots) used in the simulation.
+        :return: A 1D tensor of length m with the marginal probabilities for each qumode.
+        """
+        if self.session is not None:
+            proc = self.session.build_remote_processor()
+        else:
+            proc = pcvl.Processor("CliffordClifford2017", self.m)
+
+        self.prepare_processor(proc, parameters)
+        sampler = pcvl.algorithm.Sampler(proc, max_shots_per_call=samples)
+        results = sampler.probs(samples)
+        state_distribution = results["results"]
+
+        # Calculate the photon number expectation value
+        
+        states = list(state_distribution.keys())
+        probs = torch.tensor(list(state_distribution.values()), device=device, dtype=torch.float32)
+        
+        state_matrix = torch.stack([
+            torch.tensor(list(state), device=device, dtype=torch.float32) for state in states
+        ])
+        
+        mode_probs = state_matrix.t().mv(probs)
+        return mode_probs
+        
+    @property
+    def embedding_size(self) -> int:
+        """(Deprecated) Size of the output tensor when not using marginal outputs."""
+        s = 0
+        for k in range(self.postselect, self.n + 1):
+            s += comb(self.m, k)
+        return s
+        
+    def translate_results(self, res: pcvl.BSDistribution) -> torch.tensor:
+        """(Deprecated) Transforms the perceval results into a list of probabilities."""
+        state_list = self.generate_state_list()
+        t = torch.zeros(self.embedding_size)
+        for i, state in enumerate(state_list):
+            t[i] = res[state]
+        return t
+        
+    @lru_cache  # Cache the state list since it doesn't change.
+    def generate_state_list(self) -> list:
+        """Generate a list of all possible output states."""
+        res = []
+        for k in range(self.postselect, self.n + 1):
+            res += self._generate_state_list_k(k)
+        return res
+    
+    def _generate_state_list_k(self, k) -> list:
+        """Generate all binary states of size self.m having exactly k 1s."""
+        return list(map(pcvl.BasicState, pcvl.utils.qmath.distinct_permutations(k * [1] + (self.m - k) * [0])))
+        
+    def prepare_processor(self, processor, parameters: Iterable[float]) -> None:
+        """Configures the processor with the circuit and input state."""
+        processor.set_circuit(self.create_circuit(parameters))
+        processor.min_detected_photons_filter(self.postselect)
+        processor.thresholded_output(True)
+        
+        # Evenly space the photons along the modes.
+        input_state = self.m * [0]
+        places = torch.linspace(0, self.m - 1, self.n)
+        for photon in places:
+            input_state[int(photon)] = 1
+        input_state = pcvl.BasicState(input_state)
+        processor.with_input(input_state)
