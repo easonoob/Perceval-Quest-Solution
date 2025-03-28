@@ -52,7 +52,7 @@ python src/plot_result.py --files qnn.pkl cnn.pkl
 
 ### QPU Validation
 
-Evaluate the model using a QPU session with the `qpu_validation.py` script. You will need to provide your SCW credentials and configuration parameters. For example:
+Evaluate the model using a QPU session with the `qpu_validation.py` script. You will need to provide your Scaleway credentials and configuration parameters. For example:
 
 ```bash
 python src/qpu_validation.py --scw_project_id YOUR_PROJECT_ID --scw_token YOUR_TOKEN --filename qnn.pkl --platform qpu:ascella --m 12 --n 3 --fraction 0.2 --batch_size 2
