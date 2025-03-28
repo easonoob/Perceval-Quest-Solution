@@ -2,6 +2,10 @@
 
 The Perceval Quest Solution by Team Quantum Tree.
 
+## One-page Report
+
+[View the PDF](./one-page.pdf)
+
 ## Overview
 
 This repository contains the solution for the Perceval Quest by Team Quantum Tree. It implements the GLASE architecture and a classical CNN baseline for partial MNIST classification. The solution uses a BosonSampler to simulate quantum circuits and supports evaluation on a QPU via Scaleway. The project includes scripts for training, plotting results, and QPU validation.
