@@ -33,7 +33,7 @@ class BosonSampler:
     def nb_parameters(self) -> int:
         """Returns the maximum number of values in the input tensor.
            This corresponds to the number of phase shifters that can affect the output probabilities in the circuit"""
-        return self._nb_parameters_needed - (self.m // 2)  # Last layer of PS doesn't change anything
+        return self._nb_parameters_needed - (self.m // 2)
     
     def create_circuit(self, parameters: Iterable[float] = None) -> pcvl.Circuit:
         """Creates a generic interferometer using a list of phases of size self._nb_parameters_needed.
@@ -58,16 +58,15 @@ class BosonSampler:
         :param n_sample: The number of samples used to estimate the output probability distribution.
         :return: A 1D tensor of size self.m representing the probability of measuring a photon in each mode.
         """
-        t = t.reshape(-1)  # Flatten the tensor to a list of values
+        t = t.reshape(-1)
         if len(t) > self.nb_parameters:
             raise ValueError(f"Got too many parameters (got {len(t)}, maximum {self.nb_parameters})")
         
-        # Complete the tensor if necessary
         z = torch.zeros(self._nb_parameters_needed - len(t))
         if len(z):
             t = torch.cat((t, z), 0)
             
-        t = t * 2 * torch.pi  # Scale to full phase range
+        t = t * 2 * torch.pi
         mode_probs = self.run(t, n_sample)
         return mode_probs
         
@@ -120,7 +119,7 @@ class BosonSampler:
             t[i] = res[state]
         return t
         
-    @lru_cache  # Cache the state list since it doesn't change.
+    @lru_cache
     def generate_state_list(self) -> list:
         """Generate a list of all possible output states."""
         res = []
@@ -138,7 +137,6 @@ class BosonSampler:
         processor.min_detected_photons_filter(self.postselect)
         processor.thresholded_output(True)
         
-        # Evenly space the photons along the modes.
         input_state = self.m * [0]
         places = torch.linspace(0, self.m - 1, self.n)
         for photon in places:

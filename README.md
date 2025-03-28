@@ -4,7 +4,7 @@ The Perceval Quest Solution by Team Quantum Tree.
 
 ## Overview
 
-This repository contains the solution for the Perceval Quest by Team Quantum Tree. It implements the GLASE architecture and a classical CNN baseline for partial MNIST classification. The solution uses a BosonSampler to simulate quantum circuits and supports evaluation on a QPU via SCW. The project includes scripts for training, plotting results, and QPU validation.
+This repository contains the solution for the Perceval Quest by Team Quantum Tree. It implements the GLASE architecture and a classical CNN baseline for partial MNIST classification. The solution uses a BosonSampler to simulate quantum circuits and supports evaluation on a QPU via Scaleway. The project includes scripts for training, plotting results, and QPU validation.
 
 ## Directory Structure
 
@@ -33,10 +33,10 @@ pip install -r requirements.txt
 Run the training script with default hyperparameters or specify your own using command-line arguments. For example:
 
 ```bash
-python src/train.py --m 20 --n 3 --qnn True --batch_size 256 --lr 2e-3 --weight_decay 1e-3 --epochs 50 --label_smoothing 0.1
+python src/train.py --m 20 --n 3 --batch_size 256 --lr 2e-3 --weight_decay 1e-3 --epochs 50 --label_smoothing 0.1
 ```
 
-If no arguments are provided, the script will use the default values.
+If no arguments are provided, the script will use the default values. Run `python src/train.py -h` for detailed arguments.
 
 ### Plotting Training Results
 
@@ -54,7 +54,7 @@ Evaluate the model using a QPU session with the `qpu_validation.py` script. You 
 python src/qpu_validation.py --scw_project_id YOUR_PROJECT_ID --scw_token YOUR_TOKEN --filename qnn.pkl --platform qpu:ascella --m 12 --n 3 --fraction 0.2 --batch_size 2
 ```
 
-Replace `YOUR_PROJECT_ID` and `YOUR_TOKEN` with your actual SCW credentials.
+Replace `YOUR_PROJECT_ID` and `YOUR_TOKEN` with your actual Scaleway credentials.
 
 ## Requirements
 

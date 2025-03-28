@@ -20,8 +20,8 @@ parser.add_argument("--m", type=int, default=20,
                     help="Number of qumodes; use 12 if testing on a real QPU.")
 parser.add_argument("--n", type=int, default=3, 
                     help="Number of parameters (e.g., circuit depth or layers).")
-parser.add_argument("--qnn", type=bool, default=True, 
-                    help="Use QNN if True, otherwise use CNNBaseline.")
+parser.add_argument("--cnn", action="store_false", 
+                    help="Use CNNBaseline instead of QNN.")
 parser.add_argument("--batch_size", type=int, default=256, 
                     help="Training batch size.")
 parser.add_argument("--lr", type=float, default=2e-3, 
@@ -36,18 +36,13 @@ args = parser.parse_args()
 
 m = args.m
 n = args.n
-qnn = args.qnn
+qnn = args.cnn
 batch_size = args.batch_size
 lr = args.lr
 weight_decay = args.weight_decay
 epochs = args.epochs
 label_smoothing = args.label_smoothing
 save_path = "qnn.pkl" if qnn else "cnn.pkl"
-
-bs = BosonSampler(m, n)
-print("embed size:", bs.embedding_size)
-print("gate angles:", bs.nb_parameters)
-print("number of qumodes:", bs.m)
 
 train_dataset = utils.MNIST_partial(split = 'train')
 val_dataset = utils.MNIST_partial(split='val')
@@ -58,6 +53,10 @@ val_loader = DataLoader(val_dataset, batch_size, shuffle = False)
 print(f"Train size: {len(train_loader)*batch_size}, Val size: {len(val_loader)*batch_size}")
 
 if qnn:
+    bs = BosonSampler(m, n)
+    print("embed size:", bs.embedding_size)
+    print("gate angles:", bs.nb_parameters)
+    print("number of qumodes:", bs.m)
     model = QNN(bs, device).to(device)
 else:
     model = CNNBaseline().to(device)
@@ -112,7 +111,7 @@ for epoch in range(epochs):
     
     surrogate_rate *= 0.95
     
-    validation_loss, validation_acc = utils.evaluate(model, val_loader)
+    validation_loss, validation_acc = utils.evaluate(model, val_loader, device)
 
     training_losses = training_losses/len(train_loader)
     training_accs = training_accs/total*100
